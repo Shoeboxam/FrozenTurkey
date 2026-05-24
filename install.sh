@@ -24,6 +24,65 @@ copy_script() {
     chmod 700 "$dst"
 }
 
+snapshot_sqlite_db() {
+    local src="$1"
+    local dst="$2"
+
+    python3 - <<'PY' "$src" "$dst"
+import sqlite3
+import sys
+
+src_path, dst_path = sys.argv[1], sys.argv[2]
+src = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)
+dst = sqlite3.connect(dst_path)
+try:
+    src.backup(dst)
+finally:
+    dst.close()
+    src.close()
+PY
+}
+
+ensure_gold_db() {
+    local name="$1"
+    local required="${2:-required}"
+    local src="/Library/Application Support/Cold Turkey/$name"
+    local dst="$SUPPORT_DIR/gold/$name"
+    local tmp="$SUPPORT_DIR/gold/$name.install.tmp"
+
+    if [ -f "$dst" ]; then
+        return 0
+    fi
+
+    if [ ! -f "$src" ]; then
+        if [ "$required" = "required" ]; then
+            echo "ERROR: Missing live Cold Turkey database: $src" >&2
+            return 1
+        fi
+        return 0
+    fi
+
+    rm -f "$tmp"
+    snapshot_sqlite_db "$src" "$tmp"
+    mv -f "$tmp" "$dst"
+    chown root:wheel "$dst"
+    chmod 600 "$dst"
+}
+
+verify_gold_db() {
+    local name="$1"
+    local required="${2:-required}"
+    local dst="$SUPPORT_DIR/gold/$name"
+    local src="/Library/Application Support/Cold Turkey/$name"
+    if [ "$required" != "required" ] && [ ! -f "$src" ] && [ ! -f "$dst" ]; then
+        return 0
+    fi
+    if [ ! -f "$dst" ]; then
+        echo "ERROR: Missing protected baseline after install: $dst" >&2
+        return 1
+    fi
+}
+
 require_root
 
 bash "$REPO_DIR/build_app.sh"
@@ -51,32 +110,12 @@ printf 'locked\n' > "$SUPPORT_DIR/state/mode"
 chown -R root:wheel "$SUPPORT_DIR"
 chmod 700 "$SUPPORT_DIR" "$SUPPORT_DIR/gold" "$SUPPORT_DIR/logs" "$SUPPORT_DIR/state"
 
-snapshot_if_missing() {
-    local name="$1"
-    local src="/Library/Application Support/Cold Turkey/$name"
-    local dst="$SUPPORT_DIR/gold/$name"
-    if [ ! -f "$dst" ] && [ -f "$src" ]; then
-        python3 - <<'PY' "$src" "$dst"
-import sqlite3
-import sys
-
-src_path, dst_path = sys.argv[1], sys.argv[2]
-src = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)
-dst = sqlite3.connect(dst_path)
-try:
-    src.backup(dst)
-finally:
-    dst.close()
-    src.close()
-PY
-        chown root:wheel "$dst"
-        chmod 600 "$dst"
-    fi
-}
-
-snapshot_if_missing "data-app.db"
-snapshot_if_missing "data-browser.db"
-snapshot_if_missing "data-helper.db"
+ensure_gold_db "data-app.db" required
+ensure_gold_db "data-browser.db" optional
+ensure_gold_db "data-helper.db" optional
+verify_gold_db "data-app.db" required
+verify_gold_db "data-browser.db" optional
+verify_gold_db "data-helper.db" optional
 
 rm -rf "$APP_DST"
 cp -R "$REPO_DIR/build/Frozen Turkey Locker.app" "$APP_DST"

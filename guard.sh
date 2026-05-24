@@ -81,6 +81,7 @@ main() {
     [ -f "$ACTIVE_DB" ] || { log "ERROR: Active database not found at $ACTIVE_DB"; exit 1; }
     [ -f "$COMPARE_SCRIPT" ] || { log "ERROR: Comparator not found at $COMPARE_SCRIPT"; exit 1; }
     [ -f "$STATS_COMPARE_SCRIPT" ] || { log "ERROR: Stats comparator not found at $STATS_COMPARE_SCRIPT"; exit 1; }
+    ensure_required_gold_dbs "$TMP_DIR" || { log "ERROR: Unable to initialize protected baselines"; exit 1; }
 
     local last_running=0
     local grace_until=0
@@ -124,6 +125,12 @@ main() {
             fi
 
             if [ "$now" -lt "$grace_until" ]; then
+                sleep 2
+                continue
+            fi
+
+            if ! ensure_required_gold_dbs "$TMP_DIR"; then
+                log "ERROR: Unable to initialize protected baselines; skipping this cycle"
                 sleep 2
                 continue
             fi

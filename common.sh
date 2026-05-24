@@ -23,6 +23,25 @@ GOLD_DB="$GOLD_DIR/data-app.db"
 GOLD_BROWSER_DB="$GOLD_DIR/data-browser.db"
 GOLD_HELPER_DB="$GOLD_DIR/data-helper.db"
 
+sqlite_backup() {
+    local src_db="$1"
+    local dst_db="$2"
+
+    python3 - <<'PY' "$src_db" "$dst_db"
+import sqlite3
+import sys
+
+src_path, dst_path = sys.argv[1], sys.argv[2]
+src = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)
+dst = sqlite3.connect(dst_path)
+try:
+    src.backup(dst)
+finally:
+    dst.close()
+    src.close()
+PY
+}
+
 ct_agent_running() {
     pgrep -f "$CT_AGENT" >/dev/null 2>&1
 }
@@ -134,23 +153,46 @@ backup_active_to_gold() {
     [ -f "$active_db" ] || return 0
     sqlite_integrity_ok "$active_db" || return 1
     rm -f "$tmp_gold"
-    python3 - <<'PY' "$active_db" "$tmp_gold"
-import sqlite3
-import sys
-
-src_path, dst_path = sys.argv[1], sys.argv[2]
-src = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)
-dst = sqlite3.connect(dst_path)
-try:
-    src.backup(dst)
-finally:
-    dst.close()
-    src.close()
-PY
+    sqlite_backup "$active_db" "$tmp_gold"
     sqlite_integrity_ok "$tmp_gold" || return 1
     mv -f "$tmp_gold" "$gold_db"
     chown root:wheel "$gold_db" 2>/dev/null || true
     chmod 600 "$gold_db" 2>/dev/null || true
+}
+
+ensure_gold_baseline() {
+    local active_db="$1"
+    local gold_db="$2"
+    local tmp_gold="$3"
+
+    if [ -f "$gold_db" ]; then
+        return 0
+    fi
+
+    [ -f "$active_db" ] || return 1
+
+    mkdir -p "$GOLD_DIR"
+    rm -f "$tmp_gold"
+    sqlite_backup "$active_db" "$tmp_gold" || return 1
+    sqlite_integrity_ok "$tmp_gold" || return 1
+    mv -f "$tmp_gold" "$gold_db"
+    chown root:wheel "$gold_db" 2>/dev/null || true
+    chmod 600 "$gold_db" 2>/dev/null || true
+}
+
+ensure_required_gold_dbs() {
+    local tmp_dir="$1"
+
+    mkdir -p "$tmp_dir" "$GOLD_DIR"
+    ensure_gold_baseline "$ACTIVE_DB" "$GOLD_DB" "$tmp_dir/data-app.db.gold.tmp" || return 1
+
+    if [ -f "$ACTIVE_BROWSER_DB" ] || [ -f "$GOLD_BROWSER_DB" ]; then
+        ensure_gold_baseline "$ACTIVE_BROWSER_DB" "$GOLD_BROWSER_DB" "$tmp_dir/data-browser.db.gold.tmp" || return 1
+    fi
+
+    if [ -f "$ACTIVE_HELPER_DB" ] || [ -f "$GOLD_HELPER_DB" ]; then
+        ensure_gold_baseline "$ACTIVE_HELPER_DB" "$GOLD_HELPER_DB" "$tmp_dir/data-helper.db.gold.tmp" || return 1
+    fi
 }
 
 restore_gold_state_into_active() {
