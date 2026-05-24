@@ -5,7 +5,7 @@ set -euo pipefail
 source "/Library/Application Support/IronTurkeyLocker/common.sh"
 
 LOG_FILE="$LOG_DIR/admin.log"
-TMP_DIR="$ACTIVE_DIR/.ironturkey-admin-lock-tmp"
+TMP_DIR="$STATE_DIR/admin-lock-tmp"
 
 log() {
     log_line "$LOG_FILE" "$@"

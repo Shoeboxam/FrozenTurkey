@@ -18,44 +18,41 @@ on openColdTurkeyUI()
     end try
 end openColdTurkeyUI
 
-set modeText to do shell script "cat '/Library/Application Support/IronTurkeyLocker/state/mode'" with administrator privileges
+on currentMode()
+    return do shell script "cat '/Library/Application Support/IronTurkeyLocker/state/mode'" with administrator privileges
+end currentMode
+
+set modeText to currentMode()
 
 if modeText is "locked" then
     try
         do shell script quoted form of "/Library/Application Support/IronTurkeyLocker/admin-enter-unlocked.sh" with administrator privileges
+        if currentMode() is not "unlocked" then error "Iron Turkey did not enter unlocked mode."
         openColdTurkeyUI()
     on error errMsg number errNum
         activate
         display dialog "Open failed: " & errMsg & " (" & errNum & ")" buttons {"OK"} default button "OK"
     end try
 else if modeText is "unlocked" then
-    set choice to button returned of (display dialog "Iron Turkey Locker" buttons {"Commit Changes", "Discard Changes", "Cancel"} default button "Commit Changes")
-    if choice is "Commit Changes" then
-        try
-            set reviewText to do shell script "/Library/Application\\ Support/IronTurkeyLocker/policy_compare.py --summary" with administrator privileges
+    try
+        set reviewText to do shell script "/Library/Application\\ Support/IronTurkeyLocker/policy_compare.py --summary" with administrator privileges
+        activate
+        set choice to button returned of (display dialog reviewText buttons {"Commit Changes", "Discard Changes", "Cancel"} default button "Commit Changes")
+        if choice is "Commit Changes" then
+            do shell script quoted form of "/Library/Application Support/IronTurkeyLocker/admin-commit.sh" with administrator privileges
+            delay 0.2
             activate
-            set reviewChoice to button returned of (display dialog reviewText buttons {"Cancel", "Commit Changes"} default button "Commit Changes")
-            if reviewChoice is "Commit Changes" then
-                do shell script quoted form of "/Library/Application Support/IronTurkeyLocker/admin-commit.sh" with administrator privileges
-                delay 0.2
-                activate
-                display dialog "Iron Turkey Locker is now locked." buttons {"OK"} default button "OK"
-            end if
-        on error errMsg number errNum
-            activate
-            display dialog "Commit failed: " & errMsg & " (" & errNum & ")" buttons {"OK"} default button "OK"
-        end try
-    else if choice is "Discard Changes" then
-        try
+            display dialog "Iron Turkey Locker is now locked." buttons {"OK"} default button "OK"
+        else if choice is "Discard Changes" then
             do shell script quoted form of "/Library/Application Support/IronTurkeyLocker/admin-lock.sh" with administrator privileges
             delay 0.2
             activate
             display dialog "Iron Turkey Locker is now locked." buttons {"OK"} default button "OK"
-        on error errMsg number errNum
-            activate
-            display dialog "Discard failed: " & errMsg & " (" & errNum & ")" buttons {"OK"} default button "OK"
-        end try
-    end if
+        end if
+    on error errMsg number errNum
+        activate
+        display dialog "Action failed: " & errMsg & " (" & errNum & ")" buttons {"OK"} default button "OK"
+    end try
 else
     display dialog "Unknown Iron Turkey Locker mode: " & modeText buttons {"OK"} default button "OK"
 end if

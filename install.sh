@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -euo pipefail
+umask 077
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 SUPPORT_DIR="/Library/Application Support/IronTurkeyLocker"
@@ -12,6 +13,7 @@ LEGACY_SUPPORT_DIR="/Library/Application Support/FrozenTurkeyLocker"
 LEGACY_APP_DST="/Applications/Frozen Turkey Locker.app"
 LEGACY_GUARD_PLIST="com.frozenturkey.locker.guard.plist"
 LEGACY_RESTORE_PLIST="com.frozenturkey.locker.restore.plist"
+COLD_TURKEY_DIR="/Library/Application Support/Cold Turkey"
 
 require_root() {
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
@@ -87,6 +89,19 @@ verify_gold_db() {
     fi
 }
 
+verify_gold_db_integrity() {
+    local name="$1"
+    local required="${2:-required}"
+    local dst="$SUPPORT_DIR/gold/$name"
+    local src="/Library/Application Support/Cold Turkey/$name"
+
+    if [ "$required" != "required" ] && [ ! -f "$src" ] && [ ! -f "$dst" ]; then
+        return 0
+    fi
+
+    sqlite3 "$dst" 'PRAGMA integrity_check;' | grep -qx 'ok'
+}
+
 cleanup_legacy_install() {
     launchctl bootout system "$LAUNCH_DAEMONS_DIR/$LEGACY_GUARD_PLIST" 2>/dev/null || true
     launchctl bootout system "$LAUNCH_DAEMONS_DIR/$LEGACY_RESTORE_PLIST" 2>/dev/null || true
@@ -94,10 +109,17 @@ cleanup_legacy_install() {
     rm -rf "$LEGACY_SUPPORT_DIR" "$LEGACY_APP_DST"
 }
 
+normalize_cold_turkey_dir() {
+    if [ -d "$COLD_TURKEY_DIR" ]; then
+        chmod 1777 "$COLD_TURKEY_DIR"
+    fi
+}
+
 require_root
 
 bash "$REPO_DIR/build_app.sh"
 cleanup_legacy_install
+normalize_cold_turkey_dir
 
 mkdir -p "$SUPPORT_DIR/gold" "$SUPPORT_DIR/logs" "$SUPPORT_DIR/state"
 
@@ -128,6 +150,9 @@ ensure_gold_db "data-helper.db" optional
 verify_gold_db "data-app.db" required
 verify_gold_db "data-browser.db" optional
 verify_gold_db "data-helper.db" optional
+verify_gold_db_integrity "data-app.db" required
+verify_gold_db_integrity "data-browser.db" optional
+verify_gold_db_integrity "data-helper.db" optional
 
 rm -rf "$APP_DST"
 cp -R "$REPO_DIR/build/Iron Turkey Locker.app" "$APP_DST"

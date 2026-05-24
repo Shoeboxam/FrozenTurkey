@@ -9,7 +9,7 @@ import re
 import sqlite3
 import sys
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional, Set, Tuple
 
 from policy_compare import load_settings_json
 
@@ -108,7 +108,7 @@ def quote_ident(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
 
-def local_now(ts: float | None = None) -> dt.datetime:
+def local_now(ts: Optional[float] = None) -> dt.datetime:
     if ts is None:
         ts = dt.datetime.now().timestamp()
     return dt.datetime.fromtimestamp(ts)
@@ -119,7 +119,7 @@ def start_of_day_epoch(now_epoch: float) -> float:
     return now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
 
-def parse_epoch_like(value: Any) -> float | None:
+def parse_epoch_like(value: Any) -> Optional[float]:
     if value in (None, ""):
         return None
     try:
@@ -142,7 +142,7 @@ def parse_epoch_like(value: Any) -> float | None:
     return None
 
 
-def parse_time_of_day_seconds(value: Any) -> int | None:
+def parse_time_of_day_seconds(value: Any) -> Optional[int]:
     if value in (None, ""):
         return None
     if isinstance(value, str):
@@ -181,7 +181,7 @@ def first_present(mapping: dict[str, Any], keys: Iterable[str]) -> Any:
     return None
 
 
-def normalize_day_value(value: Any) -> set[int] | None:
+def normalize_day_value(value: Any) -> Optional[Set[int]]:
     if value in (None, ""):
         return None
     if isinstance(value, str):
@@ -191,7 +191,7 @@ def normalize_day_value(value: Any) -> set[int] | None:
         if text in DAY_NAMES:
             return {DAY_NAMES[text]}
         if "," in text:
-            out: set[int] = set()
+            out: Set[int] = set()
             for part in text.split(","):
                 parsed = normalize_day_value(part.strip())
                 if parsed is None:
@@ -203,7 +203,7 @@ def normalize_day_value(value: Any) -> set[int] | None:
         except ValueError:
             return set()
     if isinstance(value, (list, tuple, set)):
-        out: set[int] = set()
+        out: Set[int] = set()
         for item in value:
             parsed = normalize_day_value(item)
             if parsed is None:
@@ -220,7 +220,7 @@ def normalize_day_value(value: Any) -> set[int] | None:
     return set()
 
 
-def schedule_entry_active_start(entry: Any, now_epoch: float) -> tuple[float | None, bool]:
+def schedule_entry_active_start(entry: Any, now_epoch: float) -> Tuple[Optional[float], bool]:
     """Return (active_start_epoch, recognized).
 
     This intentionally recognizes several simple schedule shapes. If an entry has
@@ -269,7 +269,7 @@ def schedule_entry_active_start(entry: Any, now_epoch: float) -> tuple[float | N
     return None, True
 
 
-def block_active_window_start(block: dict[str, Any], now_epoch: float) -> tuple[float | None, bool]:
+def block_active_window_start(block: dict[str, Any], now_epoch: float) -> Tuple[Optional[float], bool]:
     if not truthy_enabled(block.get("enabled")):
         return None, True
 

@@ -5,11 +5,13 @@ import json
 import sqlite3
 import sys
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 
 DEFAULT_GOLD_DB = "/Library/Application Support/IronTurkeyLocker/gold/data-app.db"
 DEFAULT_LIVE_DB = "/Library/Application Support/Cold Turkey/data-app.db"
+EXPECTED_POLICY_TABLES = {"settings"}
+EXPECTED_SETTINGS_COLUMNS = ("key", "value")
 
 
 GLOBAL_EQUALITY_KEYS = {
@@ -31,6 +33,29 @@ GLOBAL_EQUALITY_KEYS = {
     "blockCharity",
 }
 
+KNOWN_TOP_LEVEL_KEYS = {"settings", "blocks", "additional"}
+KNOWN_BLOCK_FIELDS = {
+    "apps",
+    "autostart",
+    "break",
+    "customUsers",
+    "enabled",
+    "exceptions",
+    "lock",
+    "lockUnblock",
+    "password",
+    "pomodoroTime",
+    "randomTextLength",
+    "restartUnblock",
+    "schedule",
+    "startTime",
+    "timer",
+    "type",
+    "users",
+    "web",
+    "window",
+}
+
 # These fields appear to represent actual blocking scope. We only treat a
 # superset as "at least as strict".
 BLOCK_SUPERSET_FIELDS = {"web", "apps"}
@@ -47,7 +72,6 @@ BLOCK_EQUALITY_FIELDS = {
     "pomodoroTime",
     "randomTextLength",
     "restartUnblock",
-    "timer",
     "type",
     "customUsers",
     "window",
@@ -78,6 +102,23 @@ def decode_payload(value: str) -> str:
 def load_settings_json(db_path: str) -> dict[str, Any]:
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
+        actual_tables = {
+            row[0]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        if actual_tables != EXPECTED_POLICY_TABLES:
+            raise ValueError(
+                f"Unexpected policy DB tables in {db_path}: expected {sorted(EXPECTED_POLICY_TABLES)}, got {sorted(actual_tables)}"
+            )
+
+        actual_columns = tuple(
+            row[1] for row in conn.execute("PRAGMA table_info(settings)")
+        )
+        if actual_columns != EXPECTED_SETTINGS_COLUMNS:
+            raise ValueError(
+                f"Unexpected settings schema in {db_path}: expected {list(EXPECTED_SETTINGS_COLUMNS)}, got {list(actual_columns)}"
+            )
+
         row = conn.execute("SELECT value FROM settings WHERE key = 'settings'").fetchone()
     finally:
         conn.close()
@@ -189,6 +230,45 @@ def compare_schedule(
         )
 
 
+def parse_optional_number(value: Any) -> Optional[float]:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def compare_timer(
+    block_name: str,
+    gold_value: Any,
+    live_value: Any,
+    weaker_reasons: list[str],
+    stronger_reasons: list[str],
+) -> None:
+    if gold_value == live_value:
+        return
+
+    gold_num = parse_optional_number(gold_value)
+    live_num = parse_optional_number(live_value)
+
+    if gold_num is not None and live_num is not None:
+        if live_num < gold_num:
+            stronger_reasons.append(
+                f"block {block_name!r} field 'timer' decreased from {gold_value!r} to {live_value!r}"
+            )
+            return
+        if live_num > gold_num:
+            weaker_reasons.append(
+                f"block {block_name!r} field 'timer' increased from {gold_value!r} to {live_value!r}"
+            )
+            return
+
+    weaker_reasons.append(
+        f"block {block_name!r} field 'timer' differs: gold={gold_value!r} live={live_value!r}"
+    )
+
+
 def compare_global_settings(
     gold: dict[str, Any],
     live: dict[str, Any],
@@ -197,6 +277,16 @@ def compare_global_settings(
 ) -> None:
     gold_settings = gold.get("settings", {})
     live_settings = live.get("settings", {})
+
+    gold_keys = set(gold_settings)
+    live_keys = set(live_settings)
+    missing_keys = gold_keys - live_keys
+    extra_keys = live_keys - gold_keys
+
+    if missing_keys:
+        weaker_reasons.append(f"settings missing expected keys: {sorted(missing_keys)}")
+    if extra_keys:
+        weaker_reasons.append(f"settings has unexpected extra keys: {sorted(extra_keys)}")
 
     for key in sorted(GLOBAL_EQUALITY_KEYS):
         if gold_settings.get(key) != live_settings.get(key):
@@ -220,6 +310,17 @@ def compare_blocks(
             continue
 
         live_block = live_blocks[block_name]
+
+        unknown_gold_fields = set(gold_block) - KNOWN_BLOCK_FIELDS
+        unknown_live_fields = set(live_block) - KNOWN_BLOCK_FIELDS
+        if unknown_gold_fields:
+            weaker_reasons.append(
+                f"block {block_name!r} in gold has unknown fields: {sorted(unknown_gold_fields)}"
+            )
+        if unknown_live_fields:
+            weaker_reasons.append(
+                f"block {block_name!r} in live has unknown fields: {sorted(unknown_live_fields)}"
+            )
 
         compare_enabled(
             block_name,
@@ -253,6 +354,13 @@ def compare_blocks(
             block_name,
             gold_block.get("schedule"),
             live_block.get("schedule"),
+            weaker_reasons,
+            stronger_reasons,
+        )
+        compare_timer(
+            block_name,
+            gold_block.get("timer"),
+            live_block.get("timer"),
             weaker_reasons,
             stronger_reasons,
         )
@@ -306,6 +414,13 @@ def compare_blocks(
         if block_name in gold_blocks:
             continue
 
+        unknown_live_fields = set(live_block) - KNOWN_BLOCK_FIELDS
+        if unknown_live_fields:
+            weaker_reasons.append(
+                f"new live block {block_name!r} has unknown fields: {sorted(unknown_live_fields)}"
+            )
+            continue
+
         stronger_reasons.append(f"new live block {block_name!r} is present")
 
         for field in sorted(BLOCK_SUPERSET_FIELDS):
@@ -326,6 +441,20 @@ def compare_blocks(
 def compare_policy(gold: dict[str, Any], live: dict[str, Any]) -> ComparisonResult:
     weaker_reasons: list[str] = []
     stronger_reasons: list[str] = []
+
+    unknown_gold_top_level = set(gold) - KNOWN_TOP_LEVEL_KEYS
+    unknown_live_top_level = set(live) - KNOWN_TOP_LEVEL_KEYS
+    if unknown_gold_top_level:
+        weaker_reasons.append(f"gold policy has unknown top-level keys: {sorted(unknown_gold_top_level)}")
+    if unknown_live_top_level:
+        weaker_reasons.append(f"live policy has unknown top-level keys: {sorted(unknown_live_top_level)}")
+
+    missing_top_level = (set(gold) - TOP_LEVEL_IGNORED_KEYS) - set(live)
+    extra_top_level = (set(live) - TOP_LEVEL_IGNORED_KEYS) - set(gold)
+    if missing_top_level:
+        weaker_reasons.append(f"live policy is missing top-level keys: {sorted(missing_top_level)}")
+    if extra_top_level:
+        weaker_reasons.append(f"live policy has unexpected top-level keys: {sorted(extra_top_level)}")
 
     for key in sorted(set(gold) - {"settings", "blocks"} - TOP_LEVEL_IGNORED_KEYS):
         if gold.get(key) != live.get(key):
@@ -386,6 +515,7 @@ def main() -> int:
         print(json.dumps({"ok": result.ok, "relation": result.relation, "reasons": result.reasons}, indent=2))
     elif args.summary:
         print(format_summary(result))
+        return 0
     elif result.relation == "equal":
         print("EQUAL: live policy matches gold.")
     elif result.relation == "stronger":
