@@ -5,9 +5,9 @@ set -euo pipefail
 source "/Library/Application Support/FrozenTurkeyLocker/common.sh"
 
 LOG_FILE="$LOG_DIR/guard.log"
-TMP_DB="$ACTIVE_DIR/.data-app.db.ctguard.tmp"
-TMP_GOLD="$GOLD_DIR/.data-app.db.tmp"
+TMP_DIR="$ACTIVE_DIR/.frozenturkey-guard-tmp"
 COMPARE_SCRIPT="$ENFORCER_DIR/policy_compare.py"
+STATS_COMPARE_SCRIPT="$ENFORCER_DIR/stats_compare.py"
 STARTUP_GRACE_SECONDS=45
 AGENT_MISSING_GRACE_SECONDS=120
 SETTLE_SECONDS=8
@@ -16,8 +16,19 @@ policy_is_at_least_as_strict() {
     python3 "$COMPARE_SCRIPT" --gold-db "$GOLD_DB" --live-db "$ACTIVE_DB" --json >"$COMPARE_OUT" 2>&1
 }
 
-comparison_relation() {
-    python3 - <<'PY' "$COMPARE_OUT"
+stats_are_monotone() {
+    python3 "$STATS_COMPARE_SCRIPT" \
+        --policy-db "$ACTIVE_DB" \
+        --gold-browser-db "$GOLD_BROWSER_DB" \
+        --live-browser-db "$ACTIVE_BROWSER_DB" \
+        --gold-helper-db "$GOLD_HELPER_DB" \
+        --live-helper-db "$ACTIVE_HELPER_DB" \
+        --json >"$STATS_COMPARE_OUT" 2>&1
+}
+
+json_relation() {
+    local path="$1"
+    python3 - <<'PY' "$path"
 import json, sys
 path = sys.argv[1]
 try:
@@ -29,45 +40,57 @@ except Exception:
 PY
 }
 
+comparison_relation() {
+    json_relation "$COMPARE_OUT"
+}
+
+stats_relation() {
+    json_relation "$STATS_COMPARE_OUT"
+}
+
 log() {
     log_line "$LOG_FILE" "$@"
 }
 
 restore_gold() {
-    restore_gold_into_active "$TMP_DB" || {
+    restore_gold_state_into_active "$TMP_DIR" || {
         log "ERROR: restore_gold failed"
         exit 1
     }
-    log "Unauthorized change detected; policy restored"
+    log "Unauthorized change detected; baseline restored"
 }
 
 promote_live_to_gold() {
-    promote_active_to_gold "$TMP_GOLD" || {
+    promote_active_state_to_gold "$TMP_DIR" || {
         log "ERROR: promote_live_to_gold failed"
         exit 1
     }
     compare_output="$(cat "$COMPARE_OUT" 2>/dev/null || true)"
+    stats_output="$(cat "$STATS_COMPARE_OUT" 2>/dev/null || true)"
     if [ -n "$compare_output" ]; then
-        log "Live policy promoted to gold: $compare_output"
-    else
-        log "Live policy promoted to gold"
+        log "Live policy comparison: $compare_output"
     fi
+    if [ -n "$stats_output" ]; then
+        log "Live stats comparison: $stats_output"
+    fi
+    log "Live state promoted to gold"
 }
 
 main() {
-    mkdir -p "$STATE_DIR" "$LOG_DIR"
+    mkdir -p "$STATE_DIR" "$LOG_DIR" "$TMP_DIR"
     [ -f "$ACTIVE_DB" ] || { log "ERROR: Active database not found at $ACTIVE_DB"; exit 1; }
     [ -f "$COMPARE_SCRIPT" ] || { log "ERROR: Comparator not found at $COMPARE_SCRIPT"; exit 1; }
+    [ -f "$STATS_COMPARE_SCRIPT" ] || { log "ERROR: Stats comparator not found at $STATS_COMPARE_SCRIPT"; exit 1; }
 
     local last_running=0
     local grace_until=0
-    local pending_hash=""
+    local pending_signature=""
     local pending_since=0
     local last_error=""
 
     if [ ! -f "$HASH_FILE" ]; then
-        raw_hash > "$HASH_FILE"
-        log "Initialized hash state"
+        state_signature > "$HASH_FILE"
+        log "Initialized state signature"
     fi
 
     log "Guard watcher started"
@@ -84,7 +107,7 @@ main() {
                 fi
                 last_running=0
                 grace_until=$((now + AGENT_MISSING_GRACE_SECONDS))
-                pending_hash=""
+                pending_signature=""
                 pending_since=0
                 sleep 2
                 continue
@@ -95,7 +118,7 @@ main() {
                 if [ "$grace_until" -lt $((now + STARTUP_GRACE_SECONDS)) ]; then
                     grace_until=$((now + STARTUP_GRACE_SECONDS))
                 fi
-                pending_hash=""
+                pending_signature=""
                 pending_since=0
                 log "Cold Turkey agent detected; waiting for startup to stabilize"
             fi
@@ -105,18 +128,18 @@ main() {
                 continue
             fi
 
-            current_hash="$(raw_hash 2>/dev/null || true)"
-            if [ -z "$current_hash" ]; then
-                if [ "$last_error" != "hash" ]; then
-                    log "Unable to read live policy hash; skipping this cycle"
-                    last_error="hash"
+            current_signature="$(state_signature 2>/dev/null || true)"
+            if [ -z "$current_signature" ]; then
+                if [ "$last_error" != "signature" ]; then
+                    log "Unable to read live state signature; skipping this cycle"
+                    last_error="signature"
                 fi
                 sleep 2
                 continue
             fi
 
-            if [ "$current_hash" != "$pending_hash" ]; then
-                pending_hash="$current_hash"
+            if [ "$current_signature" != "$pending_signature" ]; then
+                pending_signature="$current_signature"
                 pending_since="$now"
                 sleep 2
                 continue
@@ -130,42 +153,77 @@ main() {
             policy_is_at_least_as_strict || true
             relation="$(comparison_relation)"
 
-            if [ "$relation" = "stronger" ]; then
+            if [ "$relation" = "weaker" ]; then
+                compare_output="$(cat "$COMPARE_OUT" 2>/dev/null || true)"
+                if [ -n "$compare_output" ]; then
+                    log "Comparator rejected live policy: $compare_output"
+                fi
+                restore_gold
+                grace_until=$((now + STARTUP_GRACE_SECONDS))
+                last_running=0
+                pending_signature=""
+                pending_since=0
+                last_error=""
+                sleep 2
+                continue
+            fi
+
+            if [ "$relation" != "equal" ] && [ "$relation" != "stronger" ]; then
+                compare_output="$(cat "$COMPARE_OUT" 2>/dev/null || true)"
+                if [ "$compare_output" != "$last_error" ]; then
+                    log "Policy comparator returned an unusable result; skipping this cycle"
+                    if [ -n "$compare_output" ]; then
+                        log "Policy comparator output: $compare_output"
+                    fi
+                    last_error="$compare_output"
+                fi
+                sleep 2
+                continue
+            fi
+
+            stats_are_monotone || true
+            stats_rel="$(stats_relation)"
+
+            if [ "$stats_rel" = "weaker" ]; then
+                stats_output="$(cat "$STATS_COMPARE_OUT" 2>/dev/null || true)"
+                if [ -n "$stats_output" ]; then
+                    log "Stats comparator rejected live stats: $stats_output"
+                fi
+                restore_gold
+                grace_until=$((now + STARTUP_GRACE_SECONDS))
+                last_running=0
+                pending_signature=""
+                pending_since=0
+                last_error=""
+                sleep 2
+                continue
+            fi
+
+            if [ "$stats_rel" != "equal" ] && [ "$stats_rel" != "stronger" ]; then
+                stats_output="$(cat "$STATS_COMPARE_OUT" 2>/dev/null || true)"
+                if [ "$stats_output" != "$last_error" ]; then
+                    log "Stats comparator returned an unusable result; skipping this cycle"
+                    if [ -n "$stats_output" ]; then
+                        log "Stats comparator output: $stats_output"
+                    fi
+                    last_error="$stats_output"
+                fi
+                sleep 2
+                continue
+            fi
+
+            if [ "$relation" = "stronger" ] || [ "$stats_rel" = "stronger" ]; then
                 promote_live_to_gold
                 last_error=""
-                pending_hash=""
+                pending_signature=""
                 pending_since=0
             else
-                if [ "$relation" = "equal" ]; then
-                    raw_hash > "$HASH_FILE"
-                    last_error=""
-                else
-                    if [ "$relation" = "weaker" ]; then
-                        compare_output="$(cat "$COMPARE_OUT" 2>/dev/null || true)"
-                        if [ -n "$compare_output" ]; then
-                            log "Comparator rejected live policy: $compare_output"
-                        fi
-                        restore_gold
-                        grace_until=$((now + STARTUP_GRACE_SECONDS))
-                        last_running=0
-                        pending_hash=""
-                        pending_since=0
-                        last_error=""
-                    else
-                        compare_output="$(cat "$COMPARE_OUT" 2>/dev/null || true)"
-                        if [ "$compare_output" != "$last_error" ]; then
-                            log "Comparator returned an unusable result; skipping this cycle"
-                            if [ -n "$compare_output" ]; then
-                                log "Comparator output: $compare_output"
-                            fi
-                            last_error="$compare_output"
-                        fi
-                    fi
-                fi
+                state_signature > "$HASH_FILE"
+                last_error=""
             fi
         else
             last_running=0
-            pending_hash=""
+            pending_signature=""
             pending_since=0
         fi
 

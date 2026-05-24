@@ -5,17 +5,17 @@ set -euo pipefail
 source "/Library/Application Support/FrozenTurkeyLocker/common.sh"
 
 LOG_FILE="$LOG_DIR/admin.log"
-TMP_DB="$ACTIVE_DIR/.data-app.db.ctlock.tmp"
+TMP_DIR="$ACTIVE_DIR/.frozenturkey-admin-lock-tmp"
 
 log() {
     log_line "$LOG_FILE" "$@"
 }
 
 main() {
-    mkdir -p "$STATE_DIR" "$LOG_DIR"
+    mkdir -p "$STATE_DIR" "$LOG_DIR" "$TMP_DIR"
 
     current_mode="$(mode)"
-    restore_gold_into_active "$TMP_DB" || { log "ERROR: lock restore failed"; exit 1; }
+    restore_gold_state_into_active "$TMP_DIR" || { log "ERROR: lock restore failed"; exit 1; }
     set_mode "locked"
     log "Lock completed from mode $current_mode"
 }

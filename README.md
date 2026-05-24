@@ -13,7 +13,8 @@ Launching Frozen Turkey toggles between the two modes.
 Each mode change requires administrator approval.
 
 In Normal Mode, Frozen Turkey monitors your Cold Turkey configuration,
-only keeping changes that are more restrictive.
+only keeping policy changes that are more restrictive. Statistics databases are
+kept with an append-or-increment-only rule over the active policy window.
 
 When entering Edit Mode, Frozen Turkey opens Cold Turkey. 
 While in Edit Mode, the guard is disabled so you can adjust your configuration normally.
@@ -35,7 +36,7 @@ This installs:
 - `/Library/LaunchDaemons/com.frozenturkey.locker.guard.plist`
 - `/Library/LaunchDaemons/com.frozenturkey.locker.restore.plist`
 
-If no baseline exists yet, the installer snapshots the current Cold Turkey `data-app.db`.
+If no baseline exists yet, the installer snapshots the current Cold Turkey local state.
 
 ## Upgrade
 

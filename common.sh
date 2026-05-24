@@ -4,6 +4,8 @@ set -euo pipefail
 
 ACTIVE_DIR="/Library/Application Support/Cold Turkey"
 ACTIVE_DB="$ACTIVE_DIR/data-app.db"
+ACTIVE_BROWSER_DB="$ACTIVE_DIR/data-browser.db"
+ACTIVE_HELPER_DB="$ACTIVE_DIR/data-helper.db"
 ACTIVE_WAL="$ACTIVE_DIR/data-app.db-wal"
 ACTIVE_SHM="$ACTIVE_DIR/data-app.db-shm"
 
@@ -14,9 +16,12 @@ STATE_DIR="$ENFORCER_DIR/state"
 MODE_FILE="$STATE_DIR/mode"
 HASH_FILE="$STATE_DIR/last_hash"
 COMPARE_OUT="$STATE_DIR/compare.out"
+STATS_COMPARE_OUT="$STATE_DIR/stats_compare.out"
 LOG_DIR="$ENFORCER_DIR/logs"
 GOLD_DIR="$ENFORCER_DIR/gold"
 GOLD_DB="$GOLD_DIR/data-app.db"
+GOLD_BROWSER_DB="$GOLD_DIR/data-browser.db"
+GOLD_HELPER_DB="$GOLD_DIR/data-helper.db"
 
 ct_agent_running() {
     pgrep -f "$CT_AGENT" >/dev/null 2>&1
@@ -59,6 +64,27 @@ print(hashlib.sha256(raw.encode()).hexdigest())
 PY
 }
 
+file_signature() {
+    local path="$1"
+    if [ ! -e "$path" ]; then
+        printf 'missing'
+        return 0
+    fi
+    if stat -f '%m:%z' "$path" >/dev/null 2>&1; then
+        stat -f '%m:%z' "$path"
+    else
+        stat -c '%Y:%s' "$path"
+    fi
+}
+
+state_signature() {
+    local app_hash
+    app_hash="$(raw_hash 2>/dev/null || printf 'unreadable')"
+    printf 'app-settings:%s\n' "$app_hash"
+    printf 'browser:%s\n' "$(file_signature "$ACTIVE_BROWSER_DB")"
+    printf 'helper:%s\n' "$(file_signature "$ACTIVE_HELPER_DB")"
+}
+
 stop_cold_turkey() {
     pkill -f "$CT_AGENT" 2>/dev/null || true
 
@@ -73,30 +99,42 @@ stop_cold_turkey() {
     done
 }
 
-restore_gold_into_active() {
-    local tmp_db="$1"
-
-    [ -f "$GOLD_DB" ] || return 1
-    [ -f "$ACTIVE_DB" ] || return 1
-
-    sqlite3 "$GOLD_DB" 'PRAGMA integrity_check;' | grep -qx 'ok' || return 1
-    stop_cold_turkey || return 1
-    rm -f "$ACTIVE_WAL" "$ACTIVE_SHM" "$tmp_db"
-    cp "$GOLD_DB" "$tmp_db"
-    sqlite3 "$tmp_db" 'PRAGMA integrity_check;' | grep -qx 'ok' || return 1
-    mv -f "$tmp_db" "$ACTIVE_DB"
-    rm -f "$ACTIVE_WAL" "$ACTIVE_SHM"
-    chown root:admin "$ACTIVE_DB" 2>/dev/null || true
-    chmod 666 "$ACTIVE_DB"
-    printf '%s\n' "$(raw_hash)" > "$HASH_FILE"
+sqlite_integrity_ok() {
+    local db="$1"
+    sqlite3 "$db" 'PRAGMA integrity_check;' | grep -qx 'ok'
 }
 
-promote_active_to_gold() {
-    local tmp_gold="$1"
+remove_sqlite_sidecars() {
+    local db="$1"
+    rm -f "$db-wal" "$db-shm"
+}
 
-    sqlite3 "$ACTIVE_DB" 'PRAGMA integrity_check;' | grep -qx 'ok' || return 1
+restore_one_gold_into_active() {
+    local gold_db="$1"
+    local active_db="$2"
+    local tmp_db="$3"
+
+    [ -f "$gold_db" ] || return 0
+    sqlite_integrity_ok "$gold_db" || return 1
+    rm -f "$tmp_db"
+    remove_sqlite_sidecars "$active_db"
+    cp "$gold_db" "$tmp_db"
+    sqlite_integrity_ok "$tmp_db" || return 1
+    mv -f "$tmp_db" "$active_db"
+    remove_sqlite_sidecars "$active_db"
+    chown root:admin "$active_db" 2>/dev/null || true
+    chmod 666 "$active_db" 2>/dev/null || true
+}
+
+backup_active_to_gold() {
+    local active_db="$1"
+    local gold_db="$2"
+    local tmp_gold="$3"
+
+    [ -f "$active_db" ] || return 0
+    sqlite_integrity_ok "$active_db" || return 1
     rm -f "$tmp_gold"
-    python3 - <<'PY' "$ACTIVE_DB" "$tmp_gold"
+    python3 - <<'PY' "$active_db" "$tmp_gold"
 import sqlite3
 import sys
 
@@ -109,7 +147,43 @@ finally:
     dst.close()
     src.close()
 PY
-    sqlite3 "$tmp_gold" 'PRAGMA integrity_check;' | grep -qx 'ok' || return 1
-    mv -f "$tmp_gold" "$GOLD_DB"
-    printf '%s\n' "$(raw_hash)" > "$HASH_FILE"
+    sqlite_integrity_ok "$tmp_gold" || return 1
+    mv -f "$tmp_gold" "$gold_db"
+    chown root:wheel "$gold_db" 2>/dev/null || true
+    chmod 600 "$gold_db" 2>/dev/null || true
+}
+
+restore_gold_state_into_active() {
+    local tmp_dir="$1"
+
+    [ -f "$GOLD_DB" ] || return 1
+    [ -f "$ACTIVE_DB" ] || return 1
+
+    mkdir -p "$tmp_dir"
+    stop_cold_turkey || return 1
+    restore_one_gold_into_active "$GOLD_DB" "$ACTIVE_DB" "$tmp_dir/data-app.db.tmp" || return 1
+    restore_one_gold_into_active "$GOLD_BROWSER_DB" "$ACTIVE_BROWSER_DB" "$tmp_dir/data-browser.db.tmp" || return 1
+    restore_one_gold_into_active "$GOLD_HELPER_DB" "$ACTIVE_HELPER_DB" "$tmp_dir/data-helper.db.tmp" || return 1
+    state_signature > "$HASH_FILE"
+}
+
+promote_active_state_to_gold() {
+    local tmp_dir="$1"
+
+    mkdir -p "$tmp_dir" "$GOLD_DIR"
+    backup_active_to_gold "$ACTIVE_DB" "$GOLD_DB" "$tmp_dir/data-app.db.tmp" || return 1
+    backup_active_to_gold "$ACTIVE_BROWSER_DB" "$GOLD_BROWSER_DB" "$tmp_dir/data-browser.db.tmp" || return 1
+    backup_active_to_gold "$ACTIVE_HELPER_DB" "$GOLD_HELPER_DB" "$tmp_dir/data-helper.db.tmp" || return 1
+    state_signature > "$HASH_FILE"
+}
+
+# Backwards-compatible wrappers used by older scripts.
+restore_gold_into_active() {
+    local tmp_db="$1"
+    restore_gold_state_into_active "$(dirname "$tmp_db")"
+}
+
+promote_active_to_gold() {
+    local tmp_gold="$1"
+    promote_active_state_to_gold "$(dirname "$tmp_gold")"
 }

@@ -38,8 +38,9 @@ copy_script "$REPO_DIR/admin-commit.sh" "$SUPPORT_DIR/admin-commit.sh"
 copy_script "$REPO_DIR/admin-lock.sh" "$SUPPORT_DIR/admin-lock.sh"
 
 cp "$REPO_DIR/policy_compare.py" "$SUPPORT_DIR/policy_compare.py"
-chown root:wheel "$SUPPORT_DIR/policy_compare.py"
-chmod 755 "$SUPPORT_DIR/policy_compare.py"
+cp "$REPO_DIR/stats_compare.py" "$SUPPORT_DIR/stats_compare.py"
+chown root:wheel "$SUPPORT_DIR/policy_compare.py" "$SUPPORT_DIR/stats_compare.py"
+chmod 755 "$SUPPORT_DIR/policy_compare.py" "$SUPPORT_DIR/stats_compare.py"
 
 cp "$REPO_DIR/com.frozenturkey.locker.guard.plist" "$LAUNCH_DAEMONS_DIR/$GUARD_PLIST"
 cp "$REPO_DIR/com.frozenturkey.locker.restore.plist" "$LAUNCH_DAEMONS_DIR/$RESTORE_PLIST"
@@ -50,11 +51,32 @@ printf 'locked\n' > "$SUPPORT_DIR/state/mode"
 chown -R root:wheel "$SUPPORT_DIR"
 chmod 700 "$SUPPORT_DIR" "$SUPPORT_DIR/gold" "$SUPPORT_DIR/logs" "$SUPPORT_DIR/state"
 
-if [ ! -f "$SUPPORT_DIR/gold/data-app.db" ] && [ -f "/Library/Application Support/Cold Turkey/data-app.db" ]; then
-    cp "/Library/Application Support/Cold Turkey/data-app.db" "$SUPPORT_DIR/gold/data-app.db"
-    chown root:wheel "$SUPPORT_DIR/gold/data-app.db"
-    chmod 600 "$SUPPORT_DIR/gold/data-app.db"
-fi
+snapshot_if_missing() {
+    local name="$1"
+    local src="/Library/Application Support/Cold Turkey/$name"
+    local dst="$SUPPORT_DIR/gold/$name"
+    if [ ! -f "$dst" ] && [ -f "$src" ]; then
+        python3 - <<'PY' "$src" "$dst"
+import sqlite3
+import sys
+
+src_path, dst_path = sys.argv[1], sys.argv[2]
+src = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)
+dst = sqlite3.connect(dst_path)
+try:
+    src.backup(dst)
+finally:
+    dst.close()
+    src.close()
+PY
+        chown root:wheel "$dst"
+        chmod 600 "$dst"
+    fi
+}
+
+snapshot_if_missing "data-app.db"
+snapshot_if_missing "data-browser.db"
+snapshot_if_missing "data-helper.db"
 
 rm -rf "$APP_DST"
 cp -R "$REPO_DIR/build/Frozen Turkey Locker.app" "$APP_DST"
