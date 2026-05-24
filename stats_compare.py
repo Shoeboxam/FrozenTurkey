@@ -39,6 +39,23 @@ HELPER_TABLES = (
     ("statsTitleStrict", ("date", "title"), ("user",), ("seconds",)),
 )
 
+EXPECTED_BROWSER_SCHEMAS = {
+    "stats": ("date", "domain", "seconds", "user"),
+    "statsBlocked": ("date", "domain", "user"),
+    "statsStrict": ("date", "domain", "seconds", "user"),
+    "statsTitle": ("date", "title", "seconds", "user"),
+    "statsTitleStrict": ("date", "title", "seconds", "user"),
+}
+
+EXPECTED_HELPER_SCHEMAS = {
+    "statsApp": ("date", "file", "seconds", "user"),
+    "statsAppStrict": ("date", "file", "seconds", "user"),
+    "statsBlocked": ("date", "file", "user"),
+    "statsBlockedTime": ("date", "break", "seconds", "user"),
+    "statsTitle": ("date", "title", "seconds", "user"),
+    "statsTitleStrict": ("date", "title", "seconds", "user"),
+}
+
 SCHEDULE_START_KEYS = ("start", "startTime", "start_time", "from", "begin", "beginTime")
 SCHEDULE_END_KEYS = ("end", "endTime", "end_time", "to", "finish", "finishTime")
 SCHEDULE_DAY_KEYS = ("day", "days", "weekday", "weekdays")
@@ -332,6 +349,49 @@ def table_exists(conn: sqlite3.Connection, schema: str, table: str) -> bool:
     return conn.execute(sql, (table,)).fetchone() is not None
 
 
+def list_tables(conn: sqlite3.Connection, schema: str) -> set[str]:
+    sql = f"SELECT name FROM {quote_ident(schema)}.sqlite_master WHERE type='table'"
+    return {row[0] for row in conn.execute(sql)}
+
+
+def table_columns(conn: sqlite3.Connection, schema: str, table: str) -> tuple[str, ...]:
+    sql = f"PRAGMA {quote_ident(schema)}.table_info({quote_ident(table)})"
+    return tuple(row[1] for row in conn.execute(sql))
+
+
+def validate_schema(
+    conn: sqlite3.Connection,
+    db_label: str,
+    schema: str,
+    expected: dict[str, tuple[str, ...]],
+    weaker: list[str],
+) -> bool:
+    actual_tables = list_tables(conn, schema)
+    expected_tables = set(expected)
+    ok = True
+
+    missing_tables = expected_tables - actual_tables
+    unexpected_tables = actual_tables - expected_tables
+    if missing_tables:
+        weaker.append(f"{db_label} ({schema}): missing expected tables {sorted(missing_tables)}")
+        ok = False
+    if unexpected_tables:
+        weaker.append(f"{db_label} ({schema}): unexpected tables present {sorted(unexpected_tables)}")
+        ok = False
+
+    for table in sorted(expected_tables & actual_tables):
+        actual_columns = table_columns(conn, schema, table)
+        expected_columns = expected[table]
+        if actual_columns != expected_columns:
+            weaker.append(
+                f"{db_label} ({schema}).{table}: schema changed "
+                f"(expected {list(expected_columns)}, got {list(actual_columns)})"
+            )
+            ok = False
+
+    return ok
+
+
 def table_cutoff_value(conn: sqlite3.Connection, table: str, cutoff_epoch: float) -> float:
     quoted = quote_ident(table)
     max_values = []
@@ -439,6 +499,7 @@ def compare_stats_db(
     gold_path: str,
     live_path: str,
     tables: tuple[tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...]], ...],
+    expected_schemas: dict[str, tuple[str, ...]],
     cutoff_epoch: float,
     weaker: list[str],
     stronger: list[str],
@@ -455,6 +516,10 @@ def compare_stats_db(
     conn = sqlite3.connect(f"file:{live_path}?mode=ro", uri=True)
     try:
         conn.execute("ATTACH DATABASE ? AS gold", (f"file:{gold_path}?mode=ro",))
+        live_ok = validate_schema(conn, db_label, "main", expected_schemas, weaker)
+        gold_ok = validate_schema(conn, db_label, "gold", expected_schemas, weaker)
+        if not (live_ok and gold_ok):
+            return
         for table, key_columns, identity_columns, counter_columns in tables:
             compare_table(
                 conn,
@@ -498,6 +563,7 @@ def compare_stats(
         gold_browser_db,
         live_browser_db,
         BROWSER_TABLES,
+        EXPECTED_BROWSER_SCHEMAS,
         cutoff_epoch,
         weaker,
         stronger,
@@ -507,6 +573,7 @@ def compare_stats(
         gold_helper_db,
         live_helper_db,
         HELPER_TABLES,
+        EXPECTED_HELPER_SCHEMAS,
         cutoff_epoch,
         weaker,
         stronger,
