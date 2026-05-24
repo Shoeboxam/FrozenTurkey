@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-source "/Library/Application Support/FrozenTurkeyLocker/common.sh"
+source "/Library/Application Support/IronTurkeyLocker/common.sh"
 
 LOG_FILE="$LOG_DIR/admin.log"
 TMP_DIR="$GOLD_DIR/.commit-tmp"

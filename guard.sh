@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
-source "/Library/Application Support/FrozenTurkeyLocker/common.sh"
+source "/Library/Application Support/IronTurkeyLocker/common.sh"
 
 LOG_FILE="$LOG_DIR/guard.log"
-TMP_DIR="$ACTIVE_DIR/.frozenturkey-guard-tmp"
+TMP_DIR="$ACTIVE_DIR/.ironturkey-guard-tmp"
 COMPARE_SCRIPT="$ENFORCER_DIR/policy_compare.py"
 STATS_COMPARE_SCRIPT="$ENFORCER_DIR/stats_compare.py"
 STARTUP_GRACE_SECONDS=45

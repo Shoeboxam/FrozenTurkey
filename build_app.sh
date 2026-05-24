@@ -5,7 +5,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 UI_DIR="$REPO_DIR/ui"
 BUILD_DIR="$REPO_DIR/build"
-APP_DIR="$BUILD_DIR/Frozen Turkey Locker.app"
+APP_DIR="$BUILD_DIR/Iron Turkey Locker.app"
 
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
@@ -18,15 +18,15 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>Frozen Turkey Locker</string>
+    <string>Iron Turkey Locker</string>
     <key>CFBundleIconFile</key>
-    <string>Frozen Turkey</string>
+    <string>Iron Turkey</string>
     <key>CFBundleIdentifier</key>
-    <string>local.frozenturkey.locker</string>
+    <string>local.ironturkey.locker</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Frozen Turkey Locker</string>
+    <string>Iron Turkey Locker</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -39,15 +39,15 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-cat > "$APP_DIR/Contents/MacOS/Frozen Turkey Locker" <<'SH'
+cat > "$APP_DIR/Contents/MacOS/Iron Turkey Locker" <<'SH'
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "$0")/../Resources" && pwd)"
-exec osascript "$SCRIPT_DIR/Frozen Turkey Locker.applescript"
+exec osascript "$SCRIPT_DIR/Iron Turkey Locker.applescript"
 SH
 
-chmod +x "$APP_DIR/Contents/MacOS/Frozen Turkey Locker"
+chmod +x "$APP_DIR/Contents/MacOS/Iron Turkey Locker"
 
-cp "$UI_DIR/Frozen Turkey Locker.applescript" "$APP_DIR/Contents/Resources/Frozen Turkey Locker.applescript"
-cp "$UI_DIR/Frozen Turkey.icns" "$APP_DIR/Contents/Resources/Frozen Turkey.icns"
+cp "$UI_DIR/Iron Turkey Locker.applescript" "$APP_DIR/Contents/Resources/Iron Turkey Locker.applescript"
+cp "$UI_DIR/Iron Turkey.icns" "$APP_DIR/Contents/Resources/Iron Turkey.icns"
 
 echo "Built app bundle at: $APP_DIR"

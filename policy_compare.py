@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 
-DEFAULT_GOLD_DB = "/Library/Application Support/FrozenTurkeyLocker/gold/data-app.db"
+DEFAULT_GOLD_DB = "/Library/Application Support/IronTurkeyLocker/gold/data-app.db"
 DEFAULT_LIVE_DB = "/Library/Application Support/Cold Turkey/data-app.db"
 
 

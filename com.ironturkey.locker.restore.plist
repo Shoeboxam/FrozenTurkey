@@ -4,12 +4,12 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.frozenturkey.locker.restore</string>
+    <string>com.ironturkey.locker.restore</string>
 
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Library/Application Support/FrozenTurkeyLocker/enforce.sh</string>
+        <string>/Library/Application Support/IronTurkeyLocker/enforce.sh</string>
     </array>
 
     <key>StartCalendarInterval</key>
@@ -24,9 +24,9 @@
     <false/>
 
     <key>StandardOutPath</key>
-    <string>/Library/Application Support/FrozenTurkeyLocker/logs/restore-stdout.log</string>
+    <string>/Library/Application Support/IronTurkeyLocker/logs/restore-stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Library/Application Support/FrozenTurkeyLocker/logs/restore-stderr.log</string>
+    <string>/Library/Application Support/IronTurkeyLocker/logs/restore-stderr.log</string>
 </dict>
 </plist>

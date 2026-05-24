@@ -3,11 +3,15 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
-SUPPORT_DIR="/Library/Application Support/FrozenTurkeyLocker"
+SUPPORT_DIR="/Library/Application Support/IronTurkeyLocker"
 LAUNCH_DAEMONS_DIR="/Library/LaunchDaemons"
-APP_DST="/Applications/Frozen Turkey Locker.app"
-GUARD_PLIST="com.frozenturkey.locker.guard.plist"
-RESTORE_PLIST="com.frozenturkey.locker.restore.plist"
+APP_DST="/Applications/Iron Turkey Locker.app"
+GUARD_PLIST="com.ironturkey.locker.guard.plist"
+RESTORE_PLIST="com.ironturkey.locker.restore.plist"
+LEGACY_SUPPORT_DIR="/Library/Application Support/FrozenTurkeyLocker"
+LEGACY_APP_DST="/Applications/Frozen Turkey Locker.app"
+LEGACY_GUARD_PLIST="com.frozenturkey.locker.guard.plist"
+LEGACY_RESTORE_PLIST="com.frozenturkey.locker.restore.plist"
 
 require_root() {
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
@@ -83,9 +87,17 @@ verify_gold_db() {
     fi
 }
 
+cleanup_legacy_install() {
+    launchctl bootout system "$LAUNCH_DAEMONS_DIR/$LEGACY_GUARD_PLIST" 2>/dev/null || true
+    launchctl bootout system "$LAUNCH_DAEMONS_DIR/$LEGACY_RESTORE_PLIST" 2>/dev/null || true
+    rm -f "$LAUNCH_DAEMONS_DIR/$LEGACY_GUARD_PLIST" "$LAUNCH_DAEMONS_DIR/$LEGACY_RESTORE_PLIST"
+    rm -rf "$LEGACY_SUPPORT_DIR" "$LEGACY_APP_DST"
+}
+
 require_root
 
 bash "$REPO_DIR/build_app.sh"
+cleanup_legacy_install
 
 mkdir -p "$SUPPORT_DIR/gold" "$SUPPORT_DIR/logs" "$SUPPORT_DIR/state"
 
@@ -101,8 +113,8 @@ cp "$REPO_DIR/stats_compare.py" "$SUPPORT_DIR/stats_compare.py"
 chown root:wheel "$SUPPORT_DIR/policy_compare.py" "$SUPPORT_DIR/stats_compare.py"
 chmod 755 "$SUPPORT_DIR/policy_compare.py" "$SUPPORT_DIR/stats_compare.py"
 
-cp "$REPO_DIR/com.frozenturkey.locker.guard.plist" "$LAUNCH_DAEMONS_DIR/$GUARD_PLIST"
-cp "$REPO_DIR/com.frozenturkey.locker.restore.plist" "$LAUNCH_DAEMONS_DIR/$RESTORE_PLIST"
+cp "$REPO_DIR/com.ironturkey.locker.guard.plist" "$LAUNCH_DAEMONS_DIR/$GUARD_PLIST"
+cp "$REPO_DIR/com.ironturkey.locker.restore.plist" "$LAUNCH_DAEMONS_DIR/$RESTORE_PLIST"
 chown root:wheel "$LAUNCH_DAEMONS_DIR/$GUARD_PLIST" "$LAUNCH_DAEMONS_DIR/$RESTORE_PLIST"
 chmod 644 "$LAUNCH_DAEMONS_DIR/$GUARD_PLIST" "$LAUNCH_DAEMONS_DIR/$RESTORE_PLIST"
 
@@ -118,7 +130,7 @@ verify_gold_db "data-browser.db" optional
 verify_gold_db "data-helper.db" optional
 
 rm -rf "$APP_DST"
-cp -R "$REPO_DIR/build/Frozen Turkey Locker.app" "$APP_DST"
+cp -R "$REPO_DIR/build/Iron Turkey Locker.app" "$APP_DST"
 chown -R root:wheel "$APP_DST"
 
 if [ -n "${SUDO_USER:-}" ]; then
@@ -130,6 +142,6 @@ launchctl bootout system "$LAUNCH_DAEMONS_DIR/$RESTORE_PLIST" 2>/dev/null || tru
 launchctl bootstrap system "$LAUNCH_DAEMONS_DIR/$GUARD_PLIST"
 launchctl bootstrap system "$LAUNCH_DAEMONS_DIR/$RESTORE_PLIST"
 
-echo "Installed Frozen Turkey Locker."
+echo "Installed Iron Turkey Locker."
 echo "App: $APP_DST"
 echo "Support dir: $SUPPORT_DIR"

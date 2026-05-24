@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
-source "/Library/Application Support/FrozenTurkeyLocker/common.sh"
+source "/Library/Application Support/IronTurkeyLocker/common.sh"
 
 LOG_FILE="$LOG_DIR/admin.log"
-TMP_DIR="$ACTIVE_DIR/.frozenturkey-admin-lock-tmp"
+TMP_DIR="$ACTIVE_DIR/.ironturkey-admin-lock-tmp"
 
 log() {
     log_line "$LOG_FILE" "$@"

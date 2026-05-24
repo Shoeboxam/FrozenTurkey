@@ -4,12 +4,12 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.frozenturkey.locker.guard</string>
+    <string>com.ironturkey.locker.guard</string>
 
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Library/Application Support/FrozenTurkeyLocker/guard.sh</string>
+        <string>/Library/Application Support/IronTurkeyLocker/guard.sh</string>
     </array>
 
     <key>RunAtLoad</key>
@@ -19,9 +19,9 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Library/Application Support/FrozenTurkeyLocker/logs/guard-stdout.log</string>
+    <string>/Library/Application Support/IronTurkeyLocker/logs/guard-stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Library/Application Support/FrozenTurkeyLocker/logs/guard-stderr.log</string>
+    <string>/Library/Application Support/IronTurkeyLocker/logs/guard-stderr.log</string>
 </dict>
 </plist>

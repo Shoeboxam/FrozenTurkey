@@ -14,9 +14,9 @@ from typing import Any, Iterable
 from policy_compare import load_settings_json
 
 DEFAULT_POLICY_DB = "/Library/Application Support/Cold Turkey/data-app.db"
-DEFAULT_GOLD_BROWSER_DB = "/Library/Application Support/FrozenTurkeyLocker/gold/data-browser.db"
+DEFAULT_GOLD_BROWSER_DB = "/Library/Application Support/IronTurkeyLocker/gold/data-browser.db"
 DEFAULT_LIVE_BROWSER_DB = "/Library/Application Support/Cold Turkey/data-browser.db"
-DEFAULT_GOLD_HELPER_DB = "/Library/Application Support/FrozenTurkeyLocker/gold/data-helper.db"
+DEFAULT_GOLD_HELPER_DB = "/Library/Application Support/IronTurkeyLocker/gold/data-helper.db"
 DEFAULT_LIVE_HELPER_DB = "/Library/Application Support/Cold Turkey/data-helper.db"
 
 # These tables appear to be usage / blocked-event statistics rather than policy.

@@ -11,7 +11,7 @@ ACTIVE_SHM="$ACTIVE_DIR/data-app.db-shm"
 
 CT_AGENT="/Applications/Cold Turkey Blocker.app/Contents/MacOS/Cold Turkey Blocker -agent"
 
-ENFORCER_DIR="/Library/Application Support/FrozenTurkeyLocker"
+ENFORCER_DIR="/Library/Application Support/IronTurkeyLocker"
 STATE_DIR="$ENFORCER_DIR/state"
 MODE_FILE="$STATE_DIR/mode"
 HASH_FILE="$STATE_DIR/last_hash"

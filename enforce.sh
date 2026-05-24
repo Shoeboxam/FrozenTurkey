@@ -9,7 +9,7 @@ ACTIVE_SHM="$ACTIVE_DIR/data-app.db-shm"
 
 CT_AGENT="/Applications/Cold Turkey Blocker.app/Contents/MacOS/Cold Turkey Blocker -agent"
 
-ENFORCER_DIR="/Library/Application Support/FrozenTurkeyLocker"
+ENFORCER_DIR="/Library/Application Support/IronTurkeyLocker"
 LOG_DIR="$ENFORCER_DIR/logs"
 LOG_FILE="$LOG_DIR/enforce.log"
 LOCK_NOW="$ENFORCER_DIR/admin-lock.sh"
